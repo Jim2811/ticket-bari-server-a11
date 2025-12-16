@@ -30,6 +30,20 @@ async function run() {
       const result = await ticketsCollection.find({ email: mail }).toArray();
       res.send(result);
     });
+
+    // advertise api
+    app.get("/tickets/advertised", async (req, res) => {
+      const query = { verificationStatus: "approved", isAdvertised: true };
+      const result = await ticketsCollection
+        .find(query)
+        .limit(6)
+        .sort({
+          createdAt: -1
+        })
+        .toArray();
+
+      res.send(result);
+    });
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
