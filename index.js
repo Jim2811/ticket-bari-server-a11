@@ -5,7 +5,7 @@ const port = process.env.PORT || 3000;
 const dotenv = require("dotenv");
 dotenv.config();
 // mongodb
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { error } = require("console");
 const uri = `mongodb+srv://${process.env.MongoDb_name}:${process.env.MongoDb_pass}@cluster0.we4ne2s.mongodb.net/?appName=Cluster0`;
 app.use(cors());
@@ -25,6 +25,8 @@ async function run() {
     await client.connect();
     const db = client.db("TicketBari");
     const ticketsCollection = db.collection("tickets");
+
+    // all tickets api
     app.get("/tickets", async (req, res) => {
       const mail = req.query.email;
       const result = await ticketsCollection.find({ email: mail }).toArray();
@@ -38,7 +40,7 @@ async function run() {
         .find(query)
         .limit(6)
         .sort({
-          createdAt: -1
+          createdAt: -1,
         })
         .toArray();
 
@@ -52,9 +54,18 @@ async function run() {
         .find(query)
         .limit(8)
         .sort({
-          createdAt: -1
+          createdAt: -1,
         })
         .toArray();
+
+      res.send(result);
+    });
+
+    // single Ticket Details api
+    app.get("/tickets/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await ticketsCollection.findOne(query);
 
       res.send(result);
     });
