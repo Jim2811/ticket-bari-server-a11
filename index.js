@@ -25,6 +25,7 @@ async function run() {
     await client.connect();
     const db = client.db("TicketBari");
     const ticketsCollection = db.collection("tickets");
+    const bookingsCollection = db.collection("bookings");
 
     // all tickets api
     app.get("/tickets", async (req, res) => {
@@ -48,7 +49,7 @@ async function run() {
     });
 
     // latest api
-    app.get("/tickets/latest", async (req, res) => {
+    app.get("/tickets/latest-tickets", async (req, res) => {
       const query = { verificationStatus: "approved" };
       const result = await ticketsCollection
         .find(query)
@@ -69,6 +70,18 @@ async function run() {
 
       res.send(result);
     });
+
+    // post booking api
+    app.post("/bookings", async (req, res) => {
+      const booking = req.body;
+      const ticket = await ticketsCollection.findOne({
+        _id: new ObjectId(booking.ticketId),
+      });
+      if (!ticket) return res.send({ message: "ticket not found" })
+      const result = await bookingsCollection.insertOne(bookingDoc);
+      res.send(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
