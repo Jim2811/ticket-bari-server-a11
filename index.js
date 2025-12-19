@@ -26,6 +26,7 @@ async function run() {
     const db = client.db("TicketBari");
     const ticketsCollection = db.collection("tickets");
     const bookingsCollection = db.collection("bookings");
+    const usersCollection = db.collection("users");
 
     // all tickets api
     app.get("/tickets", async (req, res) => {
@@ -74,12 +75,31 @@ async function run() {
     // post booking api
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
+
       const ticket = await ticketsCollection.findOne({
         _id: new ObjectId(booking.ticketId),
       });
-      if (!ticket) return res.send({ message: "ticket not found" });
-      const result = await bookingsCollection.insertOne(booking);
-      res.send(result);
+      if (!ticket) return res.status(404).send({ message: "Ticket not found" });
+      const existingBooking = await bookingsCollection.findOne({
+        userEmail: booking.userEmail,
+        ticketId: booking.ticketId,
+        status: "pending",
+      });
+      if (existingBooking) {
+        const updated = await bookingsCollection.updateOne(
+          { _id: existingBooking._id },
+          { $inc: { bookingQuantity: Number(booking.bookingQuantity) } }
+        );
+        return res.send({ message: "Booking quantity updated", updated });
+      }
+      const result = await bookingsCollection.insertOne({
+        ...booking,
+        bookingQuantity: Number(booking.bookingQuantity),
+        status: "pending",
+        createdAt: new Date(),
+      });
+
+      res.send({ message: "Booking created", result });
     });
 
     // get booked tickets api
@@ -89,12 +109,7 @@ async function run() {
       const result = await bookingsCollection
         .aggregate([
           { $match: { userEmail: email } },
-          {
-            $addFields: {
-              tId: { $toObjectId: "$ticketId" },
-              bookingQuantity: { $toInt: "$bookingQuantity" },
-            },
-          },
+          { $addFields: { tId: { $toObjectId: "$ticketId" } } },
           {
             $lookup: {
               from: "tickets",
@@ -103,33 +118,20 @@ async function run() {
               as: "t",
             },
           },
-
           { $unwind: "$t" },
           {
-            $group: {
-              _id: "$ticketId",
-              bookingQuantity: { $sum: "$bookingQuantity" },
-              unitPrice: { $first: { $toDouble: "$t.pricePerUnit" } },
-              status: { $first: "$status" },
-              ticketTitle: { $first: "$t.title" },
-              imageURL: { $first: "$t.imageURL" },
-              from: { $first: "$t.from" },
-              to: { $first: "$t.to" },
-              departureDateTime: { $first: "$t.departureDateTime" },
-            },
-          },
-          {
             $project: {
-              _id: 0,
-              ticketId: "$_id",
               bookingQuantity: 1,
-              unitPrice: 1,
               status: 1,
-              ticketTitle: 1,
-              imageURL: 1,
-              from: 1,
-              to: 1,
-              departureDateTime: 1,
+              ticketTitle: "$t.title",
+              imageURL: "$t.imageURL",
+              from: "$t.from",
+              to: "$t.to",
+              departureDateTime: "$t.departureDateTime",
+              unitPrice: "$t.pricePerUnit",
+              totalPrice: {
+                $multiply: ["$t.pricePerUnit", "$bookingQuantity"],
+              },
             },
           },
         ])
@@ -137,9 +139,18 @@ async function run() {
 
       res.send(result);
     });
-
-   
     
+    //user api
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const existingUser = await usersCollection.findOne({ email: user.email });
+      if (existingUser) {
+        return res.send({ message: "User already exists" });
+      }
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
