@@ -77,11 +77,69 @@ async function run() {
       const ticket = await ticketsCollection.findOne({
         _id: new ObjectId(booking.ticketId),
       });
-      if (!ticket) return res.send({ message: "ticket not found" })
-      const result = await bookingsCollection.insertOne(bookingDoc);
+      if (!ticket) return res.send({ message: "ticket not found" });
+      const result = await bookingsCollection.insertOne(booking);
       res.send(result);
     });
 
+    // get booked tickets api
+    app.get("/bookings", async (req, res) => {
+      const email = req.query.email;
+
+      const result = await bookingsCollection
+        .aggregate([
+          { $match: { userEmail: email } },
+          {
+            $addFields: {
+              tId: { $toObjectId: "$ticketId" },
+              bookingQuantity: { $toInt: "$bookingQuantity" },
+            },
+          },
+          {
+            $lookup: {
+              from: "tickets",
+              localField: "tId",
+              foreignField: "_id",
+              as: "t",
+            },
+          },
+
+          { $unwind: "$t" },
+          {
+            $group: {
+              _id: "$ticketId",
+              bookingQuantity: { $sum: "$bookingQuantity" },
+              unitPrice: { $first: { $toDouble: "$t.pricePerUnit" } },
+              status: { $first: "$status" },
+              ticketTitle: { $first: "$t.title" },
+              imageURL: { $first: "$t.imageURL" },
+              from: { $first: "$t.from" },
+              to: { $first: "$t.to" },
+              departureDateTime: { $first: "$t.departureDateTime" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              ticketId: "$_id",
+              bookingQuantity: 1,
+              unitPrice: 1,
+              status: 1,
+              ticketTitle: 1,
+              imageURL: 1,
+              from: 1,
+              to: 1,
+              departureDateTime: 1,
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(result);
+    });
+
+   
+    
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
