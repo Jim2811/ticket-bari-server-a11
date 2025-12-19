@@ -4,7 +4,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const dotenv = require("dotenv");
 dotenv.config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 // mongodb
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.MongoDb_name}:${process.env.MongoDb_pass}@cluster0.we4ne2s.mongodb.net/?appName=Cluster0`;
@@ -27,7 +27,7 @@ async function run() {
     const ticketsCollection = db.collection("tickets");
     const bookingsCollection = db.collection("bookings");
     const usersCollection = db.collection("users");
-
+    const paymentCollection = db.collection("payments")
     // all tickets api
     app.get("/tickets", async (req, res) => {
       const mail = req.query.email;
@@ -84,7 +84,7 @@ async function run() {
         userEmail: booking.userEmail,
         ticketId: booking.ticketId,
         status: "pending",
-        paymentStatus: "unpaid"
+        paymentStatus: "unpaid",
       });
       if (existingBooking) {
         const updated = await bookingsCollection.updateOne(
@@ -95,7 +95,7 @@ async function run() {
       }
       const result = await bookingsCollection.insertOne({
         ...booking,
-        bookingQuantity: Number(booking.bookingQuantity)
+        bookingQuantity: Number(booking.bookingQuantity),
       });
 
       res.send({ message: "Booking created", result });
@@ -181,31 +181,53 @@ async function run() {
         ],
         success_url: `${process.env.CLIENT_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.CLIENT_URL}/dashboard/payment-cancel?canceled=true`,
-        metadata: { bookingId: bookingId },
-        customer_email: booking.userEmail
+        metadata: { bookingId: bookingId, title: ticket.title },
+        customer_email: booking.userEmail,
       });
 
       res.send({ url: session.url });
     });
 
     // update payment
-    app.patch('/payment-success', async (req, res) =>{
-      const session_id = req.query.session_id
-      const session = await stripe.checkout.sessions.retrieve(session_id)
-      if(session.payment_status === 'paid'){
+    app.patch("/payment-success", async (req, res) => {
+      const session_id = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+      if (session.payment_status === "paid") {
         const id = session.metadata.bookingId;
-        const query = {_id: new ObjectId(id)}
+        const query = { _id: new ObjectId(id) };
         const update = {
           $set: {
-            paymentStatus: "paid"
-          }
+            paymentStatus: "paid",
+          },
+        };
+        const result = await bookingsCollection.updateOne(query, update);
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          bookingId: session.metadata.bookingId,
+          title: session.metadata.title,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+        if(session.payment_status==='paid'){
+          const resultPayment = await paymentCollection.insertOne(payment)
+          const savedPayment = await paymentCollection.findOne({ _id: resultPayment.insertedId });
+
+          res.send({
+            result,
+            paymentResult: savedPayment,
+            resultPayment
+          })
         }
-        const result = await bookingsCollection.updateOne(query, update)
-        res.send(result)
+        res.send(result);
       }
-    })
+    });
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } catch {
     (err) => console.log(err);
   }
