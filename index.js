@@ -84,6 +84,7 @@ async function run() {
         userEmail: booking.userEmail,
         ticketId: booking.ticketId,
         status: "pending",
+        paymentStatus: "unpaid"
       });
       if (existingBooking) {
         const updated = await bookingsCollection.updateOne(
@@ -94,9 +95,7 @@ async function run() {
       }
       const result = await bookingsCollection.insertOne({
         ...booking,
-        bookingQuantity: Number(booking.bookingQuantity),
-        status: "pending",
-        createdAt: new Date(),
+        bookingQuantity: Number(booking.bookingQuantity)
       });
 
       res.send({ message: "Booking created", result });
@@ -123,6 +122,7 @@ async function run() {
             $project: {
               bookingQuantity: 1,
               status: 1,
+              paymentStatus: 1,
               ticketTitle: "$t.title",
               imageURL: "$t.imageURL",
               from: "$t.from",
@@ -179,18 +179,33 @@ async function run() {
             quantity: qty,
           },
         ],
-        success_url: `${process.env.CLIENT_URL}/dashboard/my-booked-tickets?success=true`,
-        cancel_url: `${process.env.CLIENT_URL}/dashboard/my-booked-tickets?canceled=true`,
+        success_url: `${process.env.CLIENT_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.CLIENT_URL}/dashboard/payment-cancel?canceled=true`,
         metadata: { bookingId: bookingId },
+        customer_email: booking.userEmail
       });
 
       res.send({ url: session.url });
     });
 
+    // update payment
+    app.patch('/payment-success', async (req, res) =>{
+      const session_id = req.query.session_id
+      const session = await stripe.checkout.sessions.retrieve(session_id)
+      if(session.payment_status === 'paid'){
+        const id = session.metadata.bookingId;
+        const query = {_id: new ObjectId(id)}
+        const update = {
+          $set: {
+            paymentStatus: "paid"
+          }
+        }
+        const result = await bookingsCollection.updateOne(query, update)
+        res.send(result)
+      }
+    })
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch {
     (err) => console.log(err);
   }
