@@ -4,9 +4,9 @@ const app = express();
 const port = process.env.PORT || 3000;
 const dotenv = require("dotenv");
 dotenv.config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 // mongodb
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const { error } = require("console");
 const uri = `mongodb+srv://${process.env.MongoDb_name}:${process.env.MongoDb_pass}@cluster0.we4ne2s.mongodb.net/?appName=Cluster0`;
 app.use(cors());
 app.use(express.json());
@@ -129,9 +129,6 @@ async function run() {
               to: "$t.to",
               departureDateTime: "$t.departureDateTime",
               unitPrice: "$t.pricePerUnit",
-              totalPrice: {
-                $multiply: ["$t.pricePerUnit", "$bookingQuantity"],
-              },
             },
           },
         ])
@@ -139,7 +136,7 @@ async function run() {
 
       res.send(result);
     });
-    
+
     //user api
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -149,6 +146,45 @@ async function run() {
       }
       const result = await usersCollection.insertOne(user);
       res.send(result);
+    });
+
+    // payment api
+    app.post("/create-checkout-session", async (req, res) => {
+      const { bookingId } = req.body;
+
+      const booking = await bookingsCollection.findOne({
+        _id: new ObjectId(bookingId),
+      });
+      if (!booking)
+        return res.status(404).send({ message: "Booking not found" });
+
+      const ticket = await ticketsCollection.findOne({
+        _id: new ObjectId(booking.ticketId),
+      });
+      if (!ticket) return res.status(404).send({ message: "Ticket not found" });
+
+      const qty = parseInt(booking.bookingQuantity);
+      const unitPrice = parseInt(ticket.pricePerUnit);
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "bdt",
+              product_data: { name: ticket.title },
+              unit_amount: unitPrice * 100,
+            },
+            quantity: qty,
+          },
+        ],
+        success_url: `${process.env.CLIENT_URL}/dashboard/my-booked-tickets?success=true`,
+        cancel_url: `${process.env.CLIENT_URL}/dashboard/my-booked-tickets?canceled=true`,
+        metadata: { bookingId: bookingId },
+      });
+
+      res.send({ url: session.url });
     });
 
     await client.db("admin").command({ ping: 1 });
