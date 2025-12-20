@@ -42,6 +42,16 @@ async function run() {
       res.send(result);
     });
 
+    // vendor ticket get api
+    app.get("/tickets/vendor", async (req, res) => {
+      const email = req.query.email;
+      const result = await ticketsCollection
+        .find({ vendorEmail: email })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(result);
+    });
+
     // advertise api
     app.get("/tickets/advertised", async (req, res) => {
       const query = { verificationStatus: "approved", isAdvertised: true };
