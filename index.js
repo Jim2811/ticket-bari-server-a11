@@ -195,6 +195,16 @@ async function run() {
       if (session.payment_status === "paid") {
         const id = session.metadata.bookingId;
         const query = { _id: new ObjectId(id) };
+        const transactionId = session.payment_intent;
+        const alreadyPaid = await paymentCollection.findOne({
+          transactionId,
+        });
+        if (alreadyPaid) {
+          return res.send({
+            message: "Payment already processed",
+            payment: alreadyPaid,
+          });
+        }
         const update = {
           $set: {
             paymentStatus: "paid",
@@ -228,7 +238,10 @@ async function run() {
     });
     app.get("/payment-success", async (req, res) => {
       const mail = req.query.email;
-      const result = await paymentCollection.find({ customerEmail: mail }).toArray();
+
+      const result = await paymentCollection
+        .find({ customerEmail: mail })
+        .toArray();
       res.send(result);
     });
     await client.db("admin").command({ ping: 1 });
