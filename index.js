@@ -27,7 +27,7 @@ async function run() {
     const ticketsCollection = db.collection("tickets");
     const bookingsCollection = db.collection("bookings");
     const usersCollection = db.collection("users");
-    const paymentCollection = db.collection("payments")
+    const paymentCollection = db.collection("payments");
     // all tickets api
     app.get("/tickets", async (req, res) => {
       const mail = req.query.email;
@@ -211,18 +211,25 @@ async function run() {
           paymentStatus: session.payment_status,
           paidAt: new Date(),
         };
-        if(session.payment_status==='paid'){
-          const resultPayment = await paymentCollection.insertOne(payment)
-          const savedPayment = await paymentCollection.findOne({ _id: resultPayment.insertedId });
+        if (session.payment_status === "paid") {
+          const resultPayment = await paymentCollection.insertOne(payment);
+          const savedPayment = await paymentCollection.findOne({
+            _id: resultPayment.insertedId,
+          });
 
           res.send({
             result,
             paymentResult: savedPayment,
-            resultPayment
-          })
+            resultPayment,
+          });
         }
         res.send(result);
       }
+    });
+    app.get("/payment-success", async (req, res) => {
+      const mail = req.query.email;
+      const result = await paymentCollection.find({ customerEmail: mail }).toArray();
+      res.send(result);
     });
     await client.db("admin").command({ ping: 1 });
     console.log(
