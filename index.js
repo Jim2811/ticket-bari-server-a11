@@ -148,11 +148,11 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/users', async (req, res) =>{
+    app.get("/users", async (req, res) => {
       const email = req.query.email;
-      const result = await usersCollection.find({ email }).toArray();
+      const result = await usersCollection.find({ email: email }).toArray();
       res.send(result);
-    })
+    });
 
     // payment api
     app.post("/create-checkout-session", async (req, res) => {
@@ -198,25 +198,27 @@ async function run() {
     app.patch("/payment-success", async (req, res) => {
       const session_id = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(session_id);
+
       if (session.payment_status === "paid") {
         const id = session.metadata.bookingId;
         const query = { _id: new ObjectId(id) };
         const transactionId = session.payment_intent;
-        const alreadyPaid = await paymentCollection.findOne({
-          transactionId,
-        });
+
+        const alreadyPaid = await paymentCollection.findOne({ transactionId });
         if (alreadyPaid) {
           return res.send({
-            message: "Payment already processed",
-            payment: alreadyPaid,
+            paymentResult: alreadyPaid,
           });
         }
+
         const update = {
           $set: {
             paymentStatus: "paid",
           },
         };
+
         const result = await bookingsCollection.updateOne(query, update);
+
         const payment = {
           amount: session.amount_total / 100,
           currency: session.currency,
@@ -227,20 +229,32 @@ async function run() {
           paymentStatus: session.payment_status,
           paidAt: new Date(),
         };
-        if (session.payment_status === "paid") {
-          const resultPayment = await paymentCollection.insertOne(payment);
-          const savedPayment = await paymentCollection.findOne({
-            _id: resultPayment.insertedId,
-          });
 
-          res.send({
-            result,
-            paymentResult: savedPayment,
-            resultPayment,
-          });
+        const resultPayment = await paymentCollection.insertOne(payment);
+        const savedPayment = await paymentCollection.findOne({
+          _id: resultPayment.insertedId,
+        });
+
+        const booking = await bookingsCollection.findOne(query);
+        if (booking) {
+          const ticketId = booking.ticketId;
+          const qty = parseInt(booking.bookingQuantity);
+          if (ticketId && qty > 0) {
+            await ticketsCollection.updateOne(
+              { _id: new ObjectId(ticketId) },
+              { $inc: { quantity: -qty } }
+            );
+          }
         }
-        res.send(result);
+
+        return res.send({
+          result,
+          paymentResult: savedPayment,
+          resultPayment,
+        });
       }
+
+      res.send({ message: "Payment not completed" });
     });
     app.get("/payment-success", async (req, res) => {
       const mail = req.query.email;
