@@ -148,6 +148,12 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/users', async (req, res) =>{
+      const email = req.query.email;
+      const result = await usersCollection.find({ email }).toArray();
+      res.send(result);
+    })
+
     // payment api
     app.post("/create-checkout-session", async (req, res) => {
       const { bookingId } = req.body;
