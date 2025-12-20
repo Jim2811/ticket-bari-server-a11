@@ -35,6 +35,13 @@ async function run() {
       res.send(result);
     });
 
+    // post ticket api
+    app.post("/tickets", async (req, res) => {
+      const ticket = req.body;
+      const result = await ticketsCollection.insertOne(ticket);
+      res.send(result);
+    });
+
     // advertise api
     app.get("/tickets/advertised", async (req, res) => {
       const query = { verificationStatus: "approved", isAdvertised: true };
