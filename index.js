@@ -224,6 +224,33 @@ async function run() {
       res.send(bookings);
     });
 
+    // vendor accept and reject api
+    app.patch("/bookings/:id/accept", async (req, res) => {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id))
+        return res.status(400).send({ message: "Invalid booking id" });
+
+      const result = await bookingsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "accepted" } }
+      );
+
+      res.send(result);
+    });
+
+    app.patch("/bookings/:id/reject", async (req, res) => {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id))
+        return res.status(400).send({ message: "Invalid booking id" });
+
+      const result = await bookingsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "rejected" } }
+      );
+
+      res.send(result);
+    });
+
     //user api
     app.post("/users", async (req, res) => {
       const user = req.body;
