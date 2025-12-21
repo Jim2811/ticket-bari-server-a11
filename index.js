@@ -31,8 +31,13 @@ async function run() {
     // all tickets api
     app.get("/tickets", async (req, res) => {
       const mail = req.query.email;
-      const result = await ticketsCollection.find({ email: mail }).toArray();
-      res.send(result);
+      if (mail) {
+        const result = await ticketsCollection.find({ email: mail }).toArray();
+        res.send(result);
+      } else {
+        const result = await ticketsCollection.find().toArray();
+        res.send(result);
+      }
     });
 
     // post ticket api
@@ -331,10 +336,76 @@ async function run() {
       res.send(result);
     });
 
+    // get user api
     app.get("/users", async (req, res) => {
       const email = req.query.email;
-      const result = await usersCollection.find({ email: email }).toArray();
-      res.send(result);
+      if (email) {
+        const result = await usersCollection.find({ email: email }).toArray();
+        res.send(result);
+      } else {
+        const result = await usersCollection.find().toArray();
+        res.send(result);
+      }
+    });
+
+    // make admin api
+    app.patch("/users/:id/make-admin", async (req, res) => {
+      const id = req.params.id;
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role: "admin" } }
+      );
+      const updatedUser = await usersCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      res.send(updatedUser);
+    });
+
+    // make vendor api
+    app.patch("/users/:id/make-vendor", async (req, res) => {
+      const id = req.params.id;
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role: "vendor" } }
+      );
+      const updatedUser = await usersCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      res.send(updatedUser);
+    });
+
+    // mark fraud api
+    app.patch("/users/:id/mark-fraud", async (req, res) => {
+      const id = req.params.id;
+
+      const vendor = await usersCollection.findOne({ _id: new ObjectId(id) });
+
+      if (!vendor) {
+        return res.status(404).send({ message: "Vendor not found" });
+      }
+
+      if (vendor.role !== "vendor") {
+        return res
+          .status(400)
+          .send({ message: "Only vendor users can be marked as fraud." });
+      }
+
+      const userResult = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isFraud: true } }
+      );
+
+      const hideTickets = await ticketsCollection.updateMany(
+        { vendorEmail: vendor.email },
+        { $set: { isHidden: true } }
+      );
+
+      res.send({
+        modifiedCount: userResult.modifiedCount + hideTickets.modifiedCount,
+        message: "Vendor marked as fraud; tickets hidden.",
+        userUpdated: userResult.modifiedCount,
+        ticketsHidden: hideTickets.modifiedCount,
+      });
     });
 
     // payment api
