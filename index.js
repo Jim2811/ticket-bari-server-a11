@@ -52,6 +52,20 @@ async function run() {
       res.send(result);
     });
 
+    // update ticket api
+    app.put("/tickets/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const data = req.body;
+
+      const updateDoc = {
+        $set: data,
+      };
+
+      const result = await ticketsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
     // advertise api
     app.get("/tickets/advertised", async (req, res) => {
       const query = { verificationStatus: "approved", isAdvertised: true };
