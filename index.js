@@ -66,6 +66,25 @@ async function run() {
       res.send(result);
     });
 
+    // delete ticket api
+    app.delete("/tickets/:id", async (req, res) => {
+      const { id } = req.params;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ error: "Invalid ticket id" });
+      }
+
+      const result = await ticketsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!result.deletedCount) {
+        return res.status(404).send({ message: "Ticket not found" });
+      }
+
+      res.send({ success: true, message: "Ticket deleted successfully" });
+    });
+
     // advertise api
     app.get("/tickets/advertised", async (req, res) => {
       const query = { verificationStatus: "approved", isAdvertised: true };
