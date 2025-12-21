@@ -187,6 +187,43 @@ async function run() {
       res.send(result);
     });
 
+    // vendor booking ticket view api
+    app.get("/vendor/bookings", async (req, res) => {
+      const email = req.query.vendorEmail;
+
+      const bookings = await bookingsCollection
+        .aggregate([
+          {
+            $addFields: { tId: { $toObjectId: "$ticketId" } },
+          },
+          {
+            $lookup: {
+              from: "tickets",
+              localField: "tId",
+              foreignField: "_id",
+              as: "ticketInfo",
+            },
+          },
+          { $unwind: "$ticketInfo" },
+          { $match: { "ticketInfo.vendorEmail": email } },
+          {
+            $project: {
+              userEmail: 1,
+              bookingQuantity: 1,
+              status: 1,
+              totalPrice: {
+                $multiply: ["$bookingQuantity", "$ticketInfo.pricePerUnit"],
+              },
+              title: "$ticketInfo.title",
+              pricePerUnit: "$ticketInfo.pricePerUnit",
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(bookings);
+    });
+
     //user api
     app.post("/users", async (req, res) => {
       const user = req.body;
