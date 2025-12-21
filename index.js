@@ -238,6 +238,58 @@ async function run() {
       res.send(result);
     });
 
+    // revenue api
+    app.get("/vendor/revenue", async (req, res) => {
+      const email = req.query.vendorEmail;
+      if (!email)
+        return res.status(400).send({ error: "Vendor email is required" });
+
+      const summary = await bookingsCollection
+        .aggregate([
+          {
+            $addFields: { tId: { $toObjectId: "$ticketId" } },
+          },
+          {
+            $lookup: {
+              from: "tickets",
+              localField: "tId",
+              foreignField: "_id",
+              as: "ticketInfo",
+            },
+          },
+          { $unwind: "$ticketInfo" },
+          {
+            $match: {
+              "ticketInfo.vendorEmail": email,
+              paymentStatus: "paid",
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: {
+                  $multiply: ["$bookingQuantity", "$ticketInfo.pricePerUnit"],
+                },
+              },
+              totalSold: { $sum: "$bookingQuantity" },
+            },
+          },
+        ])
+        .toArray();
+
+      // vendor এর total tickets count
+      const totalTicketsAdded = await ticketsCollection.countDocuments({
+        vendorEmail: email,
+      });
+
+      res.send({
+        totalRevenue: summary[0]?.totalRevenue || 0,
+        totalTicketsSold: summary[0]?.totalSold || 0,
+        totalTicketsAdded,
+      });
+    });
+
     app.patch("/bookings/:id/reject", async (req, res) => {
       const { id } = req.params;
       if (!ObjectId.isValid(id))
