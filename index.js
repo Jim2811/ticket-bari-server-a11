@@ -122,6 +122,23 @@ async function run() {
       res.send(result);
     });
 
+    //approve or reject ticket
+    app.patch("/tickets/:id/:action", async (req, res) => {
+      const { id, action } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const newStatus =
+        action === "approve"
+          ? "approved"
+          : action === "reject"
+          ? "rejected"
+          : "pending";
+
+      const result = await ticketsCollection.updateOne(query, {
+        $set: { verificationStatus: newStatus },
+      });
+      res.send(result);
+    });
+
     // post booking api
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
