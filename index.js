@@ -59,16 +59,42 @@ async function run() {
 
     // update ticket api
     app.put("/tickets/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const data = req.body;
+      try {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const { isAdvertised } = req.body;
 
-      const updateDoc = {
-        $set: data,
-      };
+        if (isAdvertised) {
+          const count = await ticketsCollection.countDocuments({
+            isAdvertised: true,
+          });
+          if (count >= 6) {
+            return res.status(400).send({
+              success: false,
+              message:
+                "Limit reached! You can't advertise more than 6 tickets.",
+            });
+          }
+        }
 
-      const result = await ticketsCollection.updateOne(filter, updateDoc);
-      res.send(result);
+        const result = await ticketsCollection.updateOne(filter, {
+          $set: req.body,
+        });
+
+        res.send({
+          success: result.matchedCount > 0,
+          updated: result.modifiedCount > 0,
+          message:
+            result.modifiedCount > 0
+              ? "Ticket updated successfully."
+              : "No change detected.",
+        });
+      } catch (err) {
+        console.error(err);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
     });
 
     // delete ticket api
@@ -397,7 +423,7 @@ async function run() {
 
       const hideTickets = await ticketsCollection.updateMany(
         { vendorEmail: vendor.email },
-        { $set: { isHidden: true } }
+        { $set: { verificationStatus: "rejected" } }
       );
 
       res.send({
