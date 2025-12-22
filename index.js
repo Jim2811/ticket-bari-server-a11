@@ -4,24 +4,19 @@ const app = express();
 const port = process.env.PORT || 3000;
 const dotenv = require("dotenv");
 
+
+dotenv.config();
 const admin = require("firebase-admin");
 const serviceAccount = require("./serviceKey.json");
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
-dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.MongoDb_name}:${process.env.MongoDb_pass}@cluster0.we4ne2s.mongodb.net/?appName=Cluster0`;
 
-app.use(
-  cors({
-    origin: ["http://localhost:5173"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(cors());
 app.use(express.json());
 app.get("/", (req, res) => {
   res.send("This is home");
@@ -53,7 +48,7 @@ const sdkMiddleware = async (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("TicketBari");
     const ticketsCollection = db.collection("tickets");
     const bookingsCollection = db.collection("bookings");
@@ -300,7 +295,7 @@ async function run() {
     });
 
     // revenue api
-    app.get("/vendor/revenue",  async (req, res) => {
+    app.get("/vendor/revenue", async (req, res) => {
       const email = req.query.vendorEmail;
       if (!email)
         return res.status(400).send({ error: "Vendor email is required" });
@@ -521,8 +516,10 @@ async function run() {
       res.send(result);
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } catch {
     (err) => console.log(err);
   }
