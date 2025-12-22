@@ -3,16 +3,30 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
 const dotenv = require("dotenv");
+
+const admin = require("firebase-admin");
+const serviceAccount = require("./serviceKey.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-// mongodb
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.MongoDb_name}:${process.env.MongoDb_pass}@cluster0.we4ne2s.mongodb.net/?appName=Cluster0`;
-app.use(cors());
+
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 app.get("/", (req, res) => {
   res.send("This is home");
 });
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -20,6 +34,23 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+// sdk middleware
+const sdkMiddleware = async (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res.status(401).send({ message: "Unauthorized access!" });
+  }
+  const token = authorization.split(" ")[1];
+  try {
+    const decode = await admin.auth().verifyIdToken(token);
+    req.user = decode;
+    next();
+  } catch {
+    return res.status(401).send({ message: "Unauthorized access!" });
+  }
+};
+
 async function run() {
   try {
     await client.connect();
@@ -28,7 +59,7 @@ async function run() {
     const bookingsCollection = db.collection("bookings");
     const usersCollection = db.collection("users");
     const paymentCollection = db.collection("payments");
-    // all tickets api
+
     app.get("/tickets", async (req, res) => {
       const mail = req.query.email;
       if (mail) {
@@ -41,14 +72,14 @@ async function run() {
     });
 
     // post ticket api
-    app.post("/tickets", async (req, res) => {
+    app.post("/tickets", sdkMiddleware, async (req, res) => {
       const ticket = req.body;
       const result = await ticketsCollection.insertOne(ticket);
       res.send(result);
     });
 
     // vendor ticket get api
-    app.get("/tickets/vendor", async (req, res) => {
+    app.get("/tickets/vendor", sdkMiddleware, async (req, res) => {
       const email = req.query.email;
       const result = await ticketsCollection
         .find({ vendorEmail: email })
@@ -58,7 +89,7 @@ async function run() {
     });
 
     // update ticket api
-    app.put("/tickets/:id", async (req, res) => {
+    app.put("/tickets/:id", sdkMiddleware, async (req, res) => {
       try {
         const id = req.params.id;
         const filter = { _id: new ObjectId(id) };
@@ -98,7 +129,7 @@ async function run() {
     });
 
     // delete ticket api
-    app.delete("/tickets/:id", async (req, res) => {
+    app.delete("/tickets/:id", sdkMiddleware, async (req, res) => {
       const { id } = req.params;
 
       if (!ObjectId.isValid(id)) {
@@ -108,7 +139,6 @@ async function run() {
       const result = await ticketsCollection.deleteOne({
         _id: new ObjectId(id),
       });
-
       if (!result.deletedCount) {
         return res.status(404).send({ message: "Ticket not found" });
       }
@@ -122,11 +152,8 @@ async function run() {
       const result = await ticketsCollection
         .find(query)
         .limit(6)
-        .sort({
-          createdAt: -1,
-        })
+        .sort({ createdAt: -1 })
         .toArray();
-
       res.send(result);
     });
 
@@ -136,20 +163,16 @@ async function run() {
       const result = await ticketsCollection
         .find(query)
         .limit(8)
-        .sort({
-          createdAt: -1,
-        })
+        .sort({ createdAt: -1 })
         .toArray();
-
       res.send(result);
     });
 
     // single Ticket Details api
-    app.get("/tickets/:id", async (req, res) => {
+    app.get("/tickets/:id", sdkMiddleware, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await ticketsCollection.findOne(query);
-
       res.send(result);
     });
 
@@ -171,9 +194,8 @@ async function run() {
     });
 
     // post booking api
-    app.post("/bookings", async (req, res) => {
+    app.post("/bookings", sdkMiddleware, async (req, res) => {
       const booking = req.body;
-
       const ticket = await ticketsCollection.findOne({
         _id: new ObjectId(booking.ticketId),
       });
@@ -195,14 +217,12 @@ async function run() {
         ...booking,
         bookingQuantity: Number(booking.bookingQuantity),
       });
-
       res.send({ message: "Booking created", result });
     });
 
     // get booked tickets api
-    app.get("/bookings", async (req, res) => {
+    app.get("/bookings", sdkMiddleware, async (req, res) => {
       const email = req.query.email;
-
       const result = await bookingsCollection
         .aggregate([
           { $match: { userEmail: email } },
@@ -231,19 +251,15 @@ async function run() {
           },
         ])
         .toArray();
-
       res.send(result);
     });
 
     // vendor booking ticket view api
-    app.get("/vendor/bookings", async (req, res) => {
+    app.get("/vendor/bookings", sdkMiddleware, async (req, res) => {
       const email = req.query.vendorEmail;
-
       const bookings = await bookingsCollection
         .aggregate([
-          {
-            $addFields: { tId: { $toObjectId: "$ticketId" } },
-          },
+          { $addFields: { tId: { $toObjectId: "$ticketId" } } },
           {
             $lookup: {
               from: "tickets",
@@ -268,7 +284,6 @@ async function run() {
           },
         ])
         .toArray();
-
       res.send(bookings);
     });
 
@@ -277,26 +292,21 @@ async function run() {
       const { id } = req.params;
       if (!ObjectId.isValid(id))
         return res.status(400).send({ message: "Invalid booking id" });
-
       const result = await bookingsCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status: "accepted" } }
       );
-
       res.send(result);
     });
 
     // revenue api
-    app.get("/vendor/revenue", async (req, res) => {
+    app.get("/vendor/revenue",  async (req, res) => {
       const email = req.query.vendorEmail;
       if (!email)
         return res.status(400).send({ error: "Vendor email is required" });
-
       const summary = await bookingsCollection
         .aggregate([
-          {
-            $addFields: { tId: { $toObjectId: "$ticketId" } },
-          },
+          { $addFields: { tId: { $toObjectId: "$ticketId" } } },
           {
             $lookup: {
               from: "tickets",
@@ -325,12 +335,9 @@ async function run() {
           },
         ])
         .toArray();
-
-      // vendor এর total tickets count
       const totalTicketsAdded = await ticketsCollection.countDocuments({
         vendorEmail: email,
       });
-
       res.send({
         totalRevenue: summary[0]?.totalRevenue || 0,
         totalTicketsSold: summary[0]?.totalSold || 0,
@@ -342,12 +349,10 @@ async function run() {
       const { id } = req.params;
       if (!ObjectId.isValid(id))
         return res.status(400).send({ message: "Invalid booking id" });
-
       const result = await bookingsCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status: "rejected" } }
       );
-
       res.send(result);
     });
 
@@ -362,11 +367,10 @@ async function run() {
       res.send(result);
     });
 
-    // get user api
-    app.get("/users", async (req, res) => {
+    app.get("/users", sdkMiddleware, async (req, res) => {
       const email = req.query.email;
       if (email) {
-        const result = await usersCollection.find({ email: email }).toArray();
+        const result = await usersCollection.find({ email }).toArray();
         res.send(result);
       } else {
         const result = await usersCollection.find().toArray();
@@ -387,7 +391,6 @@ async function run() {
       res.send(updatedUser);
     });
 
-    // make vendor api
     app.patch("/users/:id/make-vendor", async (req, res) => {
       const id = req.params.id;
       const result = await usersCollection.updateOne(
@@ -400,32 +403,25 @@ async function run() {
       res.send(updatedUser);
     });
 
-    // mark fraud api
     app.patch("/users/:id/mark-fraud", async (req, res) => {
       const id = req.params.id;
-
       const vendor = await usersCollection.findOne({ _id: new ObjectId(id) });
-
       if (!vendor) {
         return res.status(404).send({ message: "Vendor not found" });
       }
-
       if (vendor.role !== "vendor") {
         return res
           .status(400)
           .send({ message: "Only vendor users can be marked as fraud." });
       }
-
       const userResult = await usersCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { isFraud: true } }
       );
-
       const hideTickets = await ticketsCollection.updateMany(
         { vendorEmail: vendor.email },
         { $set: { verificationStatus: "rejected" } }
       );
-
       res.send({
         modifiedCount: userResult.modifiedCount + hideTickets.modifiedCount,
         message: "Vendor marked as fraud; tickets hidden.",
@@ -437,13 +433,11 @@ async function run() {
     // payment api
     app.post("/create-checkout-session", async (req, res) => {
       const { bookingId } = req.body;
-
       const booking = await bookingsCollection.findOne({
         _id: new ObjectId(bookingId),
       });
       if (!booking)
         return res.status(404).send({ message: "Booking not found" });
-
       const ticket = await ticketsCollection.findOne({
         _id: new ObjectId(booking.ticketId),
       });
@@ -451,7 +445,6 @@ async function run() {
 
       const qty = parseInt(booking.bookingQuantity);
       const unitPrice = parseInt(ticket.pricePerUnit);
-
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         mode: "payment",
@@ -470,35 +463,22 @@ async function run() {
         metadata: { bookingId: bookingId, title: ticket.title },
         customer_email: booking.userEmail,
       });
-
       res.send({ url: session.url });
     });
 
-    // update payment
     app.patch("/payment-success", async (req, res) => {
       const session_id = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(session_id);
-
       if (session.payment_status === "paid") {
         const id = session.metadata.bookingId;
         const query = { _id: new ObjectId(id) };
         const transactionId = session.payment_intent;
-
         const alreadyPaid = await paymentCollection.findOne({ transactionId });
         if (alreadyPaid) {
-          return res.send({
-            paymentResult: alreadyPaid,
-          });
+          return res.send({ paymentResult: alreadyPaid });
         }
-
-        const update = {
-          $set: {
-            paymentStatus: "paid",
-          },
-        };
-
+        const update = { $set: { paymentStatus: "paid" } };
         const result = await bookingsCollection.updateOne(query, update);
-
         const payment = {
           amount: session.amount_total / 100,
           currency: session.currency,
@@ -509,12 +489,10 @@ async function run() {
           paymentStatus: session.payment_status,
           paidAt: new Date(),
         };
-
         const resultPayment = await paymentCollection.insertOne(payment);
         const savedPayment = await paymentCollection.findOne({
           _id: resultPayment.insertedId,
         });
-
         const booking = await bookingsCollection.findOne(query);
         if (booking) {
           const ticketId = booking.ticketId;
@@ -526,32 +504,30 @@ async function run() {
             );
           }
         }
-
         return res.send({
           result,
           paymentResult: savedPayment,
           resultPayment,
         });
       }
-
       res.send({ message: "Payment not completed" });
     });
-    app.get("/payment-success", async (req, res) => {
-      const mail = req.query.email;
 
+    app.get("/payment-success", sdkMiddleware, async (req, res) => {
+      const mail = req.query.email;
       const result = await paymentCollection
         .find({ customerEmail: mail })
         .toArray();
       res.send(result);
     });
+
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch {
     (err) => console.log(err);
   }
 }
+
 run();
 app.listen(port, () => {
   console.log(`App listening on port ${port}`);
